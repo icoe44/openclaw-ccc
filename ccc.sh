@@ -171,8 +171,40 @@ check_connectivity() {
     echo -e "${CYAN}========================================${NC}"
     echo ""
     
-    local proxy="http://127.0.0.1:7890"
     local all_passed=true
+    local proxy_found=false
+    local proxy=""
+    
+    # 自动检测代理端口（Clash/V2Ray/Surge/Shadowsocks 等）
+    local proxy_ports=(7890 7891 7892 1080 1081 8080 8888 9090)
+    for port in "${proxy_ports[@]}"; do
+        if curl -s --connect-timeout 1 -x "http://127.0.0.1:$port" -o /dev/null -w '%{http_code}' "http://www.gstatic.com/generate_204" 2>/dev/null | grep -q "204\|301\|302"; then
+            proxy="http://127.0.0.1:$port"
+            proxy_found=true
+            break
+        fi
+    done
+    
+    if ! $proxy_found; then
+        echo -e "${RED}✗ 未检测到代理服务器${NC}"
+        echo ""
+        echo -e "${YELLOW}请检查：${NC}"
+        echo "1. Clash/V2Ray/Surge 是否运行"
+        echo "2. 代理端口设置（常见端口：7890, 7891, 1080, 8080）"
+        echo "3. 系统代理是否开启"
+        echo ""
+        echo -e "${YELLOW}手动指定端口？输入端口号（回车跳过）：${NC}"
+        read -r custom_port
+        if [[ -n "$custom_port" && "$custom_port" =~ ^[0-9]+$ ]]; then
+            proxy="http://127.0.0.1:$custom_port"
+            proxy_found=true
+        else
+            echo ""
+            echo -e "${YELLOW}按回车返回...${NC}"
+            read
+            return
+        fi
+    fi
     
     echo -e "${YELLOW}代理地址：${NC}$proxy"
     echo -e "${YELLOW}检测中...${NC}"
@@ -190,35 +222,46 @@ check_connectivity() {
         fi
     }
     
-    check_Curl() {
+    check_curl() {
         local name="$1"
         local url="$2"
         local proxy_opt="$3"
         local result
+        local status_text
+        
         if [[ -n "$proxy_opt" ]]; then
             result=$(curl -s --connect-timeout 3 -x "$proxy_opt" -o /dev/null -w '%{http_code}' "$url" 2>&1)
         else
             result=$(curl -s --connect-timeout 3 -o /dev/null -w '%{http_code}' "$url" 2>&1)
         fi
-        if [[ "$result" =~ ^[23] ]]; then
-            printf "%-25s ${GREEN}✓ %s${NC}\n" "$name" "$result"
-        elif [[ "$result" == "000" ]]; then
-            printf "%-25s ${RED}✗ 超时${NC}\n" "$name"
-            all_passed=false
-        else
-            printf "%-25s ${YELLOW}! %s${NC}\n" "$name" "$result"
-        fi
+        
+        # 状态码翻译（新手友好）
+        case "$result" in
+            200) status_text="${GREEN}✓ 正常${NC}" ;;
+            204) status_text="${GREEN}✓ 正常${NC}" ;;
+            301|302) status_text="${GREEN}✓ 重定向${NC}" ;;
+            400) status_text="${YELLOW}! 请求错误${NC}" ;;
+            401) status_text="${YELLOW}! 需要认证${NC}" ;;
+            403) status_text="${YELLOW}! 禁止访问${NC}" ;;
+            404) status_text="${YELLOW}! 页面不存在${NC}" ;;
+            421) status_text="${YELLOW}! 配置错误${NC}" ;;
+            500|502|503) status_text="${RED}✗ 服务器错误${NC}" ;;
+            000) status_text="${RED}✗ 连接超时${NC}"; all_passed=false ;;
+            *) status_text="${YELLOW}! 状态码 $result${NC}" ;;
+        esac
+        
+        printf "%-25s %b\n" "$name" "$status_text"
     }
     
     # 执行检测
     check_ping "Google DNS" "8.8.8.8"
     check_ping "Cloudflare DNS" "1.1.1.1"
-    check_Curl "Google.com (直连)" "https://www.google.com" ""
-    check_Curl "Google.com (代理)" "https://www.google.com" "$proxy"
-    check_Curl "Telegram API" "https://api.telegram.org" "$proxy"
-    check_Curl "Discord API" "https://discord.com/api" "$proxy"
-    check_Curl "GitHub API" "https://api.github.com" "$proxy"
-    check_Curl "OpenAI API" "https://api.openai.com" "$proxy"
+    check_curl "Google.com (直连)" "https://www.google.com" ""
+    check_curl "Google.com (代理)" "https://www.google.com" "$proxy"
+    check_curl "Telegram API" "https://api.telegram.org" "$proxy"
+    check_curl "Discord API" "https://discord.com/api" "$proxy"
+    check_curl "GitHub API" "https://api.github.com" "$proxy"
+    check_curl "OpenAI API" "https://api.openai.com" "$proxy"
     
     echo ""
     echo -e "${CYAN}----------------------------------------${NC}"
@@ -229,8 +272,8 @@ check_connectivity() {
         echo -e "${RED}✗ 部分检测失败${NC}"
         echo ""
         echo -e "${YELLOW}常见问题解决方案：${NC}"
-        echo "1. 检查 Clash 是否运行"
-        echo "2. 检查代理端口：curl -I http://127.0.0.1:7890"
+        echo "1. 检查代理软件是否运行（Clash/V2Ray/Surge 等）"
+        echo "2. 确认代理端口设置"
         echo "3. 切换非香港节点（OpenAI 不支持香港）"
         echo "4. 运行系统健康检查（选项 11）"
     fi

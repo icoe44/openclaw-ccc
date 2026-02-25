@@ -174,49 +174,51 @@ check_connectivity() {
     local proxy="http://127.0.0.1:7890"
     local all_passed=true
     
-    # 检测项列表
-    declare -A tests=(
-        ["Google DNS"]="ping -c1 -W1 8.8.8.8"
-        ["Cloudflare DNS"]="ping -c1 -W1 1.1.1.1"
-        ["Google.com (直连)"]="curl -s --connect-timeout 3 -o /dev/null -w '%{http_code}' https://www.google.com"
-        ["Google.com (代理)"]="curl -s --connect-timeout 3 -x $proxy -o /dev/null -w '%{http_code}' https://www.google.com"
-        ["Telegram API (代理)"]="curl -s --connect-timeout 3 -x $proxy -o /dev/null -w '%{http_code}' https://api.telegram.org"
-        ["Discord API (代理)"]="curl -s --connect-timeout 3 -x $proxy -o /dev/null -w '%{http_code}' https://discord.com/api"
-        ["GitHub API (代理)"]="curl -s --connect-timeout 3 -x $proxy -o /dev/null -w '%{http_code}' https://api.github.com"
-        ["OpenAI API (代理)"]="curl -s --connect-timeout 3 -x $proxy -o /dev/null -w '%{http_code}' https://api.openai.com"
-    )
-    
     echo -e "${YELLOW}代理地址：${NC}$proxy"
     echo -e "${YELLOW}检测中...${NC}"
     echo ""
     
-    for name in "${!tests[@]}"; do
-        local cmd="${tests[$name]}"
-        local result
-        local status
-        
-        if [[ "$cmd" == ping* ]]; then
-            result=$(eval "$cmd" 2>&1)
-            if [[ $? -eq 0 ]]; then
-                status="${GREEN}✓ 通${NC}"
-            else
-                status="${RED}✗ 不通${NC}"
-                all_passed=false
-            fi
+    # 检测函数
+    check_ping() {
+        local name="$1"
+        local host="$2"
+        if ping -c1 -W1 "$host" >/dev/null 2>&1; then
+            printf "%-25s ${GREEN}✓ 通${NC}\n" "$name"
         else
-            result=$(eval "$cmd" 2>&1)
-            if [[ "$result" =~ ^[23] ]]; then
-                status="${GREEN}✓ $result${NC}"
-            elif [[ "$result" == "000" ]]; then
-                status="${RED}✗ 超时${NC}"
-                all_passed=false
-            else
-                status="${YELLOW}! $result${NC}"
-            fi
+            printf "%-25s ${RED}✗ 不通${NC}\n" "$name"
+            all_passed=false
         fi
-        
-        printf "%-25s %s\n" "$name" "$status"
-    done
+    }
+    
+    check_Curl() {
+        local name="$1"
+        local url="$2"
+        local proxy_opt="$3"
+        local result
+        if [[ -n "$proxy_opt" ]]; then
+            result=$(curl -s --connect-timeout 3 -x "$proxy_opt" -o /dev/null -w '%{http_code}' "$url" 2>&1)
+        else
+            result=$(curl -s --connect-timeout 3 -o /dev/null -w '%{http_code}' "$url" 2>&1)
+        fi
+        if [[ "$result" =~ ^[23] ]]; then
+            printf "%-25s ${GREEN}✓ %s${NC}\n" "$name" "$result"
+        elif [[ "$result" == "000" ]]; then
+            printf "%-25s ${RED}✗ 超时${NC}\n" "$name"
+            all_passed=false
+        else
+            printf "%-25s ${YELLOW}! %s${NC}\n" "$name" "$result"
+        fi
+    }
+    
+    # 执行检测
+    check_ping "Google DNS" "8.8.8.8"
+    check_ping "Cloudflare DNS" "1.1.1.1"
+    check_Curl "Google.com (直连)" "https://www.google.com" ""
+    check_Curl "Google.com (代理)" "https://www.google.com" "$proxy"
+    check_Curl "Telegram API" "https://api.telegram.org" "$proxy"
+    check_Curl "Discord API" "https://discord.com/api" "$proxy"
+    check_Curl "GitHub API" "https://api.github.com" "$proxy"
+    check_Curl "OpenAI API" "https://api.openai.com" "$proxy"
     
     echo ""
     echo -e "${CYAN}----------------------------------------${NC}"
@@ -227,8 +229,8 @@ check_connectivity() {
         echo -e "${RED}✗ 部分检测失败${NC}"
         echo ""
         echo -e "${YELLOW}常见问题解决方案：${NC}"
-        echo "1. 检查 Clash 是否运行：${BLUE}clash-verge${NC}"
-        echo "2. 检查代理端口：${BLUE}curl -I http://127.0.0.1:7890${NC}"
+        echo "1. 检查 Clash 是否运行"
+        echo "2. 检查代理端口：curl -I http://127.0.0.1:7890"
         echo "3. 切换非香港节点（OpenAI 不支持香港）"
         echo "4. 运行系统健康检查（选项 11）"
     fi

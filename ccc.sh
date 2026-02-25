@@ -35,11 +35,16 @@ show_main_menu() {
     echo -e "${YELLOW}8.${NC} 模型列表                ${BLUE}models list${NC}"
     echo -e "${YELLOW}9.${NC} 模型状态                ${BLUE}models status${NC}"
     echo ""
+    echo -e "${YELLOW}【诊断工具】${NC}"
+    echo -e "${YELLOW}10.${NC} 网络连通性检测         ${BLUE}check-connectivity${NC}"
+    echo -e "${YELLOW}11.${NC} 系统健康检查           ${BLUE}doctor${NC}"
+    echo ""
     echo -e "${YELLOW}【更多】${NC}"
-    echo -e "${YELLOW}10.${NC} 定时任务               ${BLUE}cron${NC}"
-    echo -e "${YELLOW}11.${NC} 插件管理               ${BLUE}plugins${NC}"
-    echo -e "${YELLOW}12.${NC} 记忆管理               ${BLUE}memory${NC}"
-    echo -e "${YELLOW}13.${NC} 高级选项               ${BLUE}setup/onboard/run/scan${NC}"
+    echo -e "${YELLOW}12.${NC} 定时任务               ${BLUE}cron${NC}"
+    echo -e "${YELLOW}13.${NC} 插件管理               ${BLUE}plugins${NC}"
+    echo -e "${YELLOW}14.${NC} 记忆管理               ${BLUE}memory${NC}"
+    echo -e "${YELLOW}15.${NC} 打开 TUI 面板           ${BLUE}dashboard${NC}"
+    echo -e "${YELLOW}16.${NC} 高级选项               ${BLUE}setup/onboard/run/scan${NC}"
     echo ""
     echo -e "${CYAN}----------------------------------------${NC}"
     echo -e "${YELLOW}0.${NC} 退出"
@@ -158,6 +163,81 @@ edit_config() {
     fi
 }
 
+# 网络连通性检测
+check_connectivity() {
+    clear
+    echo -e "${CYAN}========================================${NC}"
+    echo -e "${GREEN}   网络连通性检测${NC}"
+    echo -e "${CYAN}========================================${NC}"
+    echo ""
+    
+    local proxy="http://127.0.0.1:7890"
+    local all_passed=true
+    
+    # 检测项列表
+    declare -A tests=(
+        ["Google DNS"]="ping -c1 -W1 8.8.8.8"
+        ["Cloudflare DNS"]="ping -c1 -W1 1.1.1.1"
+        ["Google.com (直连)"]="curl -s --connect-timeout 3 -o /dev/null -w '%{http_code}' https://www.google.com"
+        ["Google.com (代理)"]="curl -s --connect-timeout 3 -x $proxy -o /dev/null -w '%{http_code}' https://www.google.com"
+        ["Telegram API (代理)"]="curl -s --connect-timeout 3 -x $proxy -o /dev/null -w '%{http_code}' https://api.telegram.org"
+        ["Discord API (代理)"]="curl -s --connect-timeout 3 -x $proxy -o /dev/null -w '%{http_code}' https://discord.com/api"
+        ["GitHub API (代理)"]="curl -s --connect-timeout 3 -x $proxy -o /dev/null -w '%{http_code}' https://api.github.com"
+        ["OpenAI API (代理)"]="curl -s --connect-timeout 3 -x $proxy -o /dev/null -w '%{http_code}' https://api.openai.com"
+    )
+    
+    echo -e "${YELLOW}代理地址：${NC}$proxy"
+    echo -e "${YELLOW}检测中...${NC}"
+    echo ""
+    
+    for name in "${!tests[@]}"; do
+        local cmd="${tests[$name]}"
+        local result
+        local status
+        
+        if [[ "$cmd" == ping* ]]; then
+            result=$(eval "$cmd" 2>&1)
+            if [[ $? -eq 0 ]]; then
+                status="${GREEN}✓ 通${NC}"
+            else
+                status="${RED}✗ 不通${NC}"
+                all_passed=false
+            fi
+        else
+            result=$(eval "$cmd" 2>&1)
+            if [[ "$result" =~ ^[23] ]]; then
+                status="${GREEN}✓ $result${NC}"
+            elif [[ "$result" == "000" ]]; then
+                status="${RED}✗ 超时${NC}"
+                all_passed=false
+            else
+                status="${YELLOW}! $result${NC}"
+            fi
+        fi
+        
+        printf "%-25s %s\n" "$name" "$status"
+    done
+    
+    echo ""
+    echo -e "${CYAN}----------------------------------------${NC}"
+    
+    if $all_passed; then
+        echo -e "${GREEN}✓ 所有检测通过！${NC}"
+    else
+        echo -e "${RED}✗ 部分检测失败${NC}"
+        echo ""
+        echo -e "${YELLOW}常见问题解决方案：${NC}"
+        echo "1. 检查 Clash 是否运行：${BLUE}clash-verge${NC}"
+        echo "2. 检查代理端口：${BLUE}curl -I http://127.0.0.1:7890${NC}"
+        echo "3. 切换非香港节点（OpenAI 不支持香港）"
+        echo "4. 运行系统健康检查（选项 11）"
+    fi
+    
+    echo ""
+    echo -e "${YELLOW}按回车返回...${NC}"
+    read
+}
+
 # 主循环
 main_loop() {
     while true; do
@@ -173,10 +253,13 @@ main_loop() {
             7) run_command "openclaw configure" ;;
             8) run_command "openclaw models list" ;;
             9) run_command "openclaw models status" ;;
-            10) cron_loop ;;
-            11) plugins_loop ;;
-            12) memory_loop ;;
-            13) advanced_loop ;;
+            10) check_connectivity ;;
+            11) run_command "openclaw doctor" ;;
+            12) cron_loop ;;
+            13) plugins_loop ;;
+            14) memory_loop ;;
+            15) run_command "openclaw dashboard" ;;
+            16) advanced_loop ;;
             0) echo -e "${GREEN}再见！${NC}" && exit 0 ;;
             *) echo -e "${RED}无效输入${NC}" && sleep 1 ;;
         esac
